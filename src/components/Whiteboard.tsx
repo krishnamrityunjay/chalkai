@@ -94,7 +94,6 @@ function Whiteboard({ onBack }: WhiteboardProps) {
     const targetStep = lesson.steps[targetIndex]
     const sentences = splitSentences(targetStep.say)
     const runId = runIdRef.current
-    let sentenceIndex = 0
 
     setStepIndex(targetIndex)
     setHasStarted(true)
@@ -104,7 +103,6 @@ function Whiteboard({ onBack }: WhiteboardProps) {
 
     const revealSentence = (index: number) => {
       if (runId === runIdRef.current && index < sentences.length) {
-        sentenceIndex = index
         revealForSentence(targetStep, index)
       }
     }
@@ -171,7 +169,6 @@ function Whiteboard({ onBack }: WhiteboardProps) {
       clearPlayback()
       onBack()
     } else {
-      // This click is a user gesture, so it can start mobile speech reliably.
       beginStep(stepIndex + 1)
     }
   }
@@ -181,7 +178,6 @@ function Whiteboard({ onBack }: WhiteboardProps) {
     clearPlayback()
     setIsMuted(nextMuted)
     if (nextMuted && hasStarted) {
-      // Keep the board useful when muted: finish revealing the current step.
       setWritingStarted(true)
       setRevealedParts(step.highlight)
     }
