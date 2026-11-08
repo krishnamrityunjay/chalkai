@@ -7,13 +7,12 @@ export function useTypewriter(text: string, enabled = true, restartToken = 0) {
     setVisibleText('')
     if (!enabled) return
 
-    let nextIndex = 0
+    let index = 0
     const timer = window.setInterval(() => {
-      nextIndex += 1
-      setVisibleText(text.slice(0, nextIndex))
-      if (nextIndex >= text.length) window.clearInterval(timer)
+      index += 1
+      setVisibleText(text.slice(0, index))
+      if (index >= text.length) window.clearInterval(timer)
     }, 40)
-
     return () => window.clearInterval(timer)
   }, [enabled, restartToken, text])
 

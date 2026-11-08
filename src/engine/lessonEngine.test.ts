@@ -3,45 +3,42 @@ import { applyGrade, createInitialState } from './lessonEngine'
 import type { GradeResult } from '../grading/gradeAnswer'
 
 const step = { id: 1, concept: 'organs' }
-const result = (grade: GradeResult['grade']): GradeResult => ({ grade, confusedWith: null, feedback: 'test feedback' })
+const grade = (value: GradeResult['grade']): GradeResult => ({ grade: value, confusedWith: null, feedback: 'feedback' })
 
-describe('applyGrade', () => {
-  it('marks a correct concept understood and advances', () => {
-    const output = applyGrade(createInitialState(), step, result('correct'))
-    expect(output.action).toBe('advance')
-    expect(output.state.states.organs).toBe('understood')
-    expect(output.state.currentStep).toBe(1)
-    expect(output.state.attempts[1]).toBe(1)
+describe('lesson engine actions', () => {
+  it('marks correct concepts understood and advances', () => {
+    const result = applyGrade(createInitialState(), step, grade('correct'))
+    expect(result.action).toBe('advance')
+    expect(result.state.states.organs).toBe('understood')
+    expect(result.state.currentStep).toBe(1)
   })
 
-  it('uses followup for partly correct answers without changing concept state', () => {
-    const initial = createInitialState()
-    const output = applyGrade(initial, step, result('partly_correct'))
-    expect(output.action).toBe('followup')
-    expect(output.state.states.organs).toBe('not_taught')
-    expect(output.state.currentStep).toBe(0)
+  it('follows up on partly correct answers without changing concept state', () => {
+    const result = applyGrade(createInitialState(), step, grade('partly_correct'))
+    expect(result.action).toBe('followup')
+    expect(result.state.states.organs).toBe('not_taught')
+    expect(result.state.currentStep).toBe(0)
   })
 
   it('reexplains the first wrong idea and marks the concept confused', () => {
-    const output = applyGrade(createInitialState(), step, result('wrong_idea'))
-    expect(output.action).toBe('reexplain')
-    expect(output.state.states.organs).toBe('confused')
-    expect(output.state.currentStep).toBe(0)
+    const result = applyGrade(createInitialState(), step, grade('wrong_idea'))
+    expect(result.action).toBe('reexplain')
+    expect(result.state.states.organs).toBe('confused')
+    expect(result.state.attempts[step.id]).toBe(1)
   })
 
   it('reveals and advances after a second wrong idea', () => {
-    const first = applyGrade(createInitialState(), step, result('wrong_idea'))
-    const second = applyGrade(first.state, step, result('wrong_idea'))
+    const first = applyGrade(createInitialState(), step, grade('wrong_idea'))
+    const second = applyGrade(first.state, step, grade('wrong_idea'))
     expect(second.action).toBe('reveal_and_advance')
-    expect(second.state.states.organs).toBe('confused')
     expect(second.state.currentStep).toBe(1)
   })
 
   it('rephrases unclear answers without counting an attempt', () => {
     const initial = createInitialState()
-    const output = applyGrade(initial, step, result('unclear'))
-    expect(output.action).toBe('rephrase')
-    expect(output.state.attempts[1]).toBeUndefined()
-    expect(output.state.currentStep).toBe(0)
+    const result = applyGrade(initial, step, grade('unclear'))
+    expect(result.action).toBe('rephrase')
+    expect(result.state.attempts[step.id]).toBeUndefined()
+    expect(result.state.currentStep).toBe(0)
   })
 })

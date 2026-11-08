@@ -17,30 +17,26 @@ export type GradeAnswerInput = {
   attempt: number
 }
 
-function normalizeAnswer(value: string) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^\p{L}\p{N}\s]/gu, '')
-    .replace(/\s+/g, ' ')
+function normalize(value: string) {
+  return value.toLowerCase().trim().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ')
 }
 
 export async function gradeAnswer(input: GradeAnswerInput): Promise<GradeResult> {
-  const answer = normalizeAnswer(input.studentAnswer)
-  const expected = normalizeAnswer(input.expected)
+  const answer = normalize(input.studentAnswer)
   const step = lesson.steps.find((item) => item.id === input.stepId)
   const acceptedAnswers = step?.acceptedAnswers ?? []
+  const correctTerms = [input.expected, ...acceptedAnswers].map(normalize).filter(Boolean)
 
-  if ([expected, ...acceptedAnswers.map(normalizeAnswer)].some((candidate) => candidate && answer.includes(candidate))) {
+  if (correctTerms.some((term) => answer.includes(term))) {
     return { grade: 'correct', confusedWith: null, feedback: 'That’s right!' }
   }
 
-  const confusion = step?.confusions.find(({ word }) => answer.includes(normalizeAnswer(word)))
+  const confusion = step?.confusions.find(({ word }) => answer.includes(normalize(word)))
   if (confusion) {
     return {
       grade: 'wrong_idea',
       confusedWith: confusion.confusedWith,
-      feedback: `It sounds like you may be thinking of ${confusion.confusedWith}. Review the idea and try again.`,
+      feedback: `That answer matches ${confusion.word}. Review this step and try again.`,
     }
   }
 

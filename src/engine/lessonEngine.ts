@@ -1,15 +1,12 @@
 import type { GradeResult } from '../grading/gradeAnswer'
 
 export type ConceptState = 'not_taught' | 'understood' | 'confused'
-
 export type LessonEngineState = {
   states: Record<string, ConceptState>
   attempts: Record<number, number>
   currentStep: number
 }
-
 export type EngineAction = 'advance' | 'followup' | 'reexplain' | 'reveal_and_advance' | 'rephrase'
-
 export type EngineStep = { id: number; concept: string }
 
 export const conceptChain = ['organs', 'fertilisation', 'cleavage', 'blastocyst', 'implantation'] as const
@@ -27,34 +24,28 @@ export function applyGrade(
   step: EngineStep,
   result: GradeResult,
 ): { state: LessonEngineState; action: EngineAction } {
-  const nextState: LessonEngineState = {
+  const next: LessonEngineState = {
     states: { ...state.states },
     attempts: { ...state.attempts },
     currentStep: state.currentStep,
   }
 
-  if (result.grade === 'unclear') {
-    return { state: nextState, action: 'rephrase' }
-  }
+  if (result.grade === 'unclear') return { state: next, action: 'rephrase' }
 
   const attempt = (state.attempts[step.id] ?? 0) + 1
-  nextState.attempts[step.id] = attempt
+  next.attempts[step.id] = attempt
 
   if (result.grade === 'correct') {
-    nextState.states[step.concept] = 'understood'
-    nextState.currentStep = state.currentStep + 1
-    return { state: nextState, action: 'advance' }
+    next.states[step.concept] = 'understood'
+    next.currentStep = state.currentStep + 1
+    return { state: next, action: 'advance' }
   }
 
-  if (result.grade === 'partly_correct') {
-    return { state: nextState, action: 'followup' }
-  }
+  if (result.grade === 'partly_correct') return { state: next, action: 'followup' }
 
-  nextState.states[step.concept] = 'confused'
-  if (attempt === 1) {
-    return { state: nextState, action: 'reexplain' }
-  }
+  next.states[step.concept] = 'confused'
+  if (attempt === 1) return { state: next, action: 'reexplain' }
 
-  nextState.currentStep = state.currentStep + 1
-  return { state: nextState, action: 'reveal_and_advance' }
+  next.currentStep = state.currentStep + 1
+  return { state: next, action: 'reveal_and_advance' }
 }
