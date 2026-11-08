@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 
-export function useTypewriter(text: string) {
+export function useTypewriter(text: string, enabled = true) {
   const [visibleText, setVisibleText] = useState('')
 
   useEffect(() => {
     setVisibleText('')
+    if (!enabled) return
+
     let nextIndex = 0
     const timer = window.setInterval(() => {
       nextIndex += 1
@@ -15,7 +17,7 @@ export function useTypewriter(text: string) {
     }, 40)
 
     return () => window.clearInterval(timer)
-  }, [text])
+  }, [enabled, text])
 
   return { visibleText, done: visibleText.length >= text.length }
 }
