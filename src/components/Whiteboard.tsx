@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import lesson from '../lesson.json'
 import { useTypewriter } from '../hooks/useTypewriter'
 import './Whiteboard.css'
@@ -66,7 +66,9 @@ function Whiteboard({ onBack }: WhiteboardProps) {
   const runIdRef = useRef(0)
   const fallbackTimersRef = useRef<number[]>([])
   const step = lesson.steps[stepIndex]
-  const sentences = splitSentences(step.say)
+  // Keep the sentence list stable across state updates. If recreated on every render,
+  // the speech effect's cleanup cancels the utterance as soon as a board action rerenders.
+  const sentences = useMemo(() => splitSentences(step.say), [step.say])
   const { visibleText, done } = useTypewriter(step.write, writingStarted)
   const isLastStep = stepIndex === lesson.steps.length - 1
 
@@ -127,8 +129,7 @@ function Whiteboard({ onBack }: WhiteboardProps) {
       }
     }
 
-    const voices = window.speechSynthesis.getVoices()
-    const voice = chooseEnglishVoice(voices)
+    const voice = chooseEnglishVoice(window.speechSynthesis.getVoices())
 
     const speakSentence = (index: number) => {
       if (runId !== runIdRef.current || index >= sentences.length) {
@@ -147,6 +148,7 @@ function Whiteboard({ onBack }: WhiteboardProps) {
       utterance.onerror = () => {
         if (runId === runIdRef.current) {
           setSpeechError(true)
+          startBoardAction(index)
           speakSentence(index + 1)
         }
       }
