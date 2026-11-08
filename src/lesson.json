@@ -1,0 +1,45 @@
+{
+  "topic": "Fertilisation to implantation",
+  "steps": [
+    {
+      "id": 1,
+      "say": "The ovary releases an egg. The oviduct carries it toward the uterus. The uterus is where a baby develops.",
+      "write": "Ovary → Oviduct → Uterus",
+      "highlight": ["ovary", "oviduct", "uterus"],
+      "check": "Which tube carries the egg toward the uterus?",
+      "expected": "oviduct"
+    },
+    {
+      "id": 2,
+      "say": "Fertilisation happens in the oviduct. A sperm nucleus (n) fuses with the egg nucleus (n) to form a zygote (2n).",
+      "write": "Fertilisation → Zygote (2n)",
+      "highlight": ["oviduct", "zygote"],
+      "check": "Where does fertilisation take place?",
+      "expected": "oviduct"
+    },
+    {
+      "id": 3,
+      "say": "The zygote divides again and again as it moves toward the uterus. This is called cleavage.",
+      "write": "Cleavage: zygote divides repeatedly",
+      "highlight": ["zygote"],
+      "check": "What is the repeated division of the zygote called?",
+      "expected": "cleavage"
+    },
+    {
+      "id": 4,
+      "say": "The dividing cells form a hollow ball of cells called a blastocyst.",
+      "write": "Blastocyst = hollow ball of cells",
+      "highlight": ["blastocyst"],
+      "check": "What is the hollow ball of cells called?",
+      "expected": "blastocyst"
+    },
+    {
+      "id": 5,
+      "say": "Around day 6 to 7, the blastocyst embeds in the thick lining of the uterus, the endometrium. This is implantation.",
+      "write": "Implantation → endometrium (day 6–7)",
+      "highlight": ["blastocyst", "endometrium"],
+      "check": "Into which layer does the blastocyst implant?",
+      "expected": "endometrium"
+    }
+  ]
+}
