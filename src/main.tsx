@@ -1,3 +1,5 @@
+import '@fontsource/caveat/400.css'
+import '@fontsource/caveat/600.css'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'

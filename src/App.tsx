@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Whiteboard from './components/Whiteboard'
 import './App.css'
 
 function ChalkMark() {
@@ -13,7 +14,11 @@ function ChalkMark() {
 }
 
 function App() {
-  const [started, setStarted] = useState(false)
+  const [lessonOpen, setLessonOpen] = useState(false)
+
+  if (lessonOpen) {
+    return <Whiteboard onBack={() => setLessonOpen(false)} />
+  }
 
   return (
     <main className="page-shell" id="home">
@@ -32,13 +37,11 @@ function App() {
           <p className="hero-description">
             Get a little help understanding the things you’re curious about. Learn at your own pace, one idea at a time.
           </p>
-          <button className="start-button" onClick={() => setStarted(true)}>
+          <button className="start-button" onClick={() => setLessonOpen(true)}>
             <span>Start Learning</span>
             <span className="button-arrow" aria-hidden="true">↗</span>
           </button>
-          <p className="button-caption" aria-live="polite">
-            {started ? 'Your first lesson is coming soon. No account needed.' : 'Free to start · No account needed'}
-          </p>
+          <p className="button-caption">Free to start · No account needed</p>
         </div>
 
         <aside className="learning-card" aria-label="How ChalkAI helps you learn">

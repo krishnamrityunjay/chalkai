@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource/caveat": "latest",
     "@vitejs/plugin-react": "latest",
     "react": "latest",
     "react-dom": "latest",
