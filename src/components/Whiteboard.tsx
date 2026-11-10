@@ -1,17 +1,23 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import lesson from '../lesson.json'
-import { gradeAnswer, type GradeAnswerWithSource } from '../grading'
-import { applyGrade, conceptChain, createInitialState, type EngineAction, type LessonEngineState } from '../engine/lessonEngine'
 import { useTypewriter } from '../hooks/useTypewriter'
 import './Whiteboard.css'
+import { applyGrade, advanceStep, createInitialState } from '../engine/lessonEngine'
+import { gradeAnswer } from '../grading'
 
 const diagramParts = [
-  { name: 'ovary', x: 16, y: 12 }, { name: 'oviduct', x: 130, y: 12 }, { name: 'uterus', x: 244, y: 12 },
-  { name: 'zygote', x: 16, y: 102 }, { name: 'blastocyst', x: 130, y: 102 }, { name: 'endometrium', x: 244, y: 102 },
+  { name: 'ovary', x: 16, y: 12 },
+  { name: 'oviduct', x: 130, y: 12 },
+  { name: 'uterus', x: 244, y: 12 },
+  { name: 'zygote', x: 16, y: 102 },
+  { name: 'blastocyst', x: 130, y: 102 },
+  { name: 'endometrium', x: 244, y: 102 },
 ] as const
 
 type LessonStep = (typeof lesson.steps)[number]
 type WhiteboardProps = { onBack: () => void }
+
+type GradeAction = 'advance' | 'followup' | 'reexplain' | 'rephrase' | 'reveal_and_advance'
 
 function splitSentences(text: string) {
   return text.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map((sentence) => sentence.trim()).filter(Boolean) ?? []
@@ -29,10 +35,14 @@ function LessonDiagram({ step, revealedParts }: { step: LessonStep; revealedPart
       <svg className="lesson-diagram" viewBox="0 0 360 166" role="img" aria-labelledby="diagram-title">
         <title id="diagram-title">Diagram parts highlighted for step {step.id}</title>
         {diagramParts.map((part) => {
-          const highlighted = step.highlight.includes(part.name)
-          const revealed = revealedParts.includes(part.name)
+          const isHighlighted = step.highlight.includes(part.name)
+          const isRevealed = revealedParts.includes(part.name)
           return (
-            <g key={part.name} className={`diagram-part${revealed ? ' is-revealed' : ''}${highlighted && !revealed ? ' is-pending' : ''}`} transform={`translate(${part.x} ${part.y})`}>
+            <g
+              key={part.name}
+              className={`diagram-part${isRevealed ? ' is-revealed' : ''}${isHighlighted && !isRevealed ? ' is-pending' : ''}`}
+              transform={`translate(${part.x} ${part.y})`}
+            >
               <rect className="diagram-box" width="100" height="48" rx="9" />
               <text className="diagram-text" x="50" y="29" textAnchor="middle">{part.name}</text>
             </g>
@@ -44,42 +54,31 @@ function LessonDiagram({ step, revealedParts }: { step: LessonStep; revealedPart
   )
 }
 
-function ConceptPanel({ states }: { states: LessonEngineState['states'] }) {
-  const labels: Record<string, string> = { organs: 'Organs', fertilisation: 'Fertilisation', cleavage: 'Cleavage', blastocyst: 'Blastocyst', implantation: 'Implantation' }
-  return (
-    <aside className="concept-panel" aria-label="Concept progress">
-      <span className="concept-heading">Concepts</span>
-      {conceptChain.map((concept) => <span className="concept-item" key={concept}><i className={`concept-dot ${states[concept]}`} aria-hidden="true" />{labels[concept]}</span>)}
-    </aside>
-  )
-}
-
 function Whiteboard({ onBack }: WhiteboardProps) {
+  const [stepIndex, setStepIndex] = useState(0)
   const [engineState, setEngineState] = useState(() => createInitialState())
   const [revealedParts, setRevealedParts] = useState<string[]>([])
   const [writingStarted, setWritingStarted] = useState(false)
-  const [writingRun, setWritingRun] = useState(0)
   const [hasStarted, setHasStarted] = useState(false)
-  const [questionVisible, setQuestionVisible] = useState(false)
-  const [answer, setAnswer] = useState('')
-  const [gradeResult, setGradeResult] = useState<GradeAnswerWithSource | null>(null)
-  const [engineAction, setEngineAction] = useState<EngineAction | null>(null)
   const [isMuted, setIsMuted] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
-  const [speechMessage, setSpeechMessage] = useState('')
-  const [completed, setCompleted] = useState(false)
+  const [speechError, setSpeechError] = useState(false)
+  const [questionVisible, setQuestionVisible] = useState(false)
+  const [answer, setAnswer] = useState('')
+  const [feedbackText, setFeedbackText] = useState<string | null>(null)
+  const [revealedAnswer, setRevealedAnswer] = useState<string | null>(null)
+  const [gradeAction, setGradeAction] = useState<GradeAction | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window
   const boardRef = useRef<HTMLElement>(null)
   const runIdRef = useRef(0)
   const timersRef = useRef<number[]>([])
   const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
-  const stepIndex = Math.min(engineState.currentStep, lesson.steps.length - 1)
   const step = lesson.steps[stepIndex]
-  const { visibleText, done } = useTypewriter(step.write, writingStarted, writingRun)
-  const canAdvance = engineAction === 'advance' || engineAction === 'reveal_and_advance'
-  const canAnswer = questionVisible && done
+  const { visibleText, done } = useTypewriter(step.write, writingStarted)
+  const isLastStep = stepIndex === lesson.steps.length - 1
 
-  const cancelPlayback = useCallback(() => {
+  const clearPlayback = useCallback(() => {
     runIdRef.current += 1
     timersRef.current.forEach(window.clearTimeout)
     timersRef.current = []
@@ -94,97 +93,100 @@ function Whiteboard({ onBack }: WhiteboardProps) {
     if ('speechSynthesis' in window) window.speechSynthesis.cancel()
   }, [])
 
-  const revealForSentence = useCallback((target: LessonStep, index: number) => {
-    const count = Math.ceil(((index + 1) * target.highlight.length) / splitSentences(target.say).length)
-    setRevealedParts(target.highlight.slice(0, count))
+  const revealForSentence = useCallback((targetStep: LessonStep, sentenceIndex: number) => {
+    setWritingStarted(true)
+    const sentenceCount = splitSentences(targetStep.say).length
+    const count = Math.ceil(((sentenceIndex + 1) * targetStep.highlight.length) / sentenceCount)
+    setRevealedParts(targetStep.highlight.slice(0, count))
   }, [])
 
   const beginStep = useCallback((targetIndex: number) => {
-    if (targetIndex >= lesson.steps.length) {
-      cancelPlayback()
-      setCompleted(true)
-      return
-    }
-    cancelPlayback()
-    const target = lesson.steps[targetIndex]
-    const sentences = splitSentences(target.say)
+    clearPlayback()
+    const targetStep = lesson.steps[targetIndex]
+    const sentences = splitSentences(targetStep.say)
     const runId = runIdRef.current
+
+    setStepIndex(targetIndex)
     setEngineState((current) => ({ ...current, currentStep: targetIndex }))
     setHasStarted(true)
-    setEngineAction(null)
-    setGradeResult(null)
-    setAnswer('')
     setQuestionVisible(false)
-    setSpeechMessage('Starting lesson…')
+    setSpeechError(false)
     setRevealedParts([])
     setWritingStarted(true)
-    setWritingRun((run) => run + 1)
+    setFeedbackText(null)
+    setRevealedAnswer(null)
+    setAnswer('')
+    setGradeAction(null)
 
     const revealSentence = (index: number) => {
-      if (runId === runIdRef.current && index < sentences.length) revealForSentence(target, index)
+      if (runId === runIdRef.current && index < sentences.length) {
+        revealForSentence(targetStep, index)
+      }
     }
 
-    const textFallback = (fromIndex: number) => {
+    const continueTextOnly = (fromIndex: number) => {
       const revealNext = (index: number) => {
         if (runId !== runIdRef.current || index >= sentences.length) return
         revealSentence(index)
-        if (index + 1 < sentences.length) timersRef.current.push(window.setTimeout(() => revealNext(index + 1), Math.max(700, sentences[index].length * 42)))
-        else setQuestionVisible(true)
+        if (index + 1 < sentences.length) {
+          const delay = Math.max(700, sentences[index].length * 42)
+          timersRef.current.push(window.setTimeout(() => revealNext(index + 1), delay))
+        } else {
+          setQuestionVisible(true)
+        }
       }
-      if (fromIndex < sentences.length) timersRef.current.push(window.setTimeout(() => revealNext(fromIndex), Math.max(700, sentences[Math.max(0, fromIndex - 1)].length * 42)))
-      else setQuestionVisible(true)
+      if (fromIndex < sentences.length) {
+        const delay = Math.max(700, sentences[Math.max(0, fromIndex - 1)].length * 42)
+        timersRef.current.push(window.setTimeout(() => revealNext(fromIndex), delay))
+      }
     }
 
     if (!speechSupported || isMuted) {
-      setSpeechMessage(isMuted ? 'Muted. Showing lesson text.' : 'Speech is not available; showing lesson text.')
-      revealSentence(0)
-      textFallback(1)
+      continueTextOnly(1)
       return
     }
 
     const voice = chooseEnglishVoice(window.speechSynthesis.getVoices())
-    let failed = false
     const speakSentence = (index: number) => {
-      if (runId !== runIdRef.current) return
-      if (index >= sentences.length) {
-        setQuestionVisible(true)
-        setSpeechMessage('Speech finished. Answer the question below.')
+      if (runId !== runIdRef.current || index >= sentences.length) {
+        if (runId === runIdRef.current) setQuestionVisible(true)
         return
       }
       const utterance = new SpeechSynthesisUtterance(sentences[index])
       if (voice) utterance.voice = voice
-      utterance.lang = voice?.lang ?? 'en-US'
+      utterance.lang = voice?.lang ?? 'en'
       activeUtteranceRef.current = utterance
-      utterance.onstart = () => {
-        if (runId !== runIdRef.current) return
-        setSpeechMessage(`Speaking sentence ${index + 1} of ${sentences.length}.`)
-        revealSentence(index)
+      utterance.onstart = () => revealSentence(index)
+      utterance.onend = () => {
+        if (runId === runIdRef.current) speakSentence(index + 1)
       }
-      utterance.onend = () => { if (runId === runIdRef.current && !failed) speakSentence(index + 1) }
       utterance.onerror = () => {
-        if (runId !== runIdRef.current || failed) return
-        failed = true
-        setSpeechMessage('Speech failed in this browser; continuing with text.')
+        if (runId !== runIdRef.current) return
+        setSpeechError(true)
         revealSentence(index)
-        textFallback(index + 1)
+        continueTextOnly(index + 1)
       }
       window.speechSynthesis.speak(utterance)
     }
     speakSentence(0)
-  }, [cancelPlayback, isMuted, revealForSentence, speechSupported])
+  }, [clearPlayback, isMuted, revealForSentence, speechSupported])
 
   useEffect(() => {
     const board = boardRef.current
     if (board) board.scrollTo({ top: board.scrollHeight, behavior: 'smooth' })
-  }, [stepIndex, visibleText, revealedParts, questionVisible, gradeResult])
+  }, [stepIndex, visibleText, revealedParts, questionVisible, feedbackText, revealedAnswer])
 
-  const goBack = () => { cancelPlayback(); onBack() }
+  const goBack = () => {
+    clearPlayback()
+    onBack()
+  }
 
-  const submitAnswer = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!canAnswer || !answer.trim() || canAdvance) return
-    const attempt = Math.min((engineState.attempts[step.id] ?? 0) + 1, 5)
-    const input = {
+    if (!questionVisible || !answer.trim() || isSubmitting) return
+    setIsSubmitting(true)
+
+    const result = await gradeAnswer({
       stepId: step.id,
       concept: step.concept,
       question: step.check,
@@ -192,74 +194,110 @@ function Whiteboard({ onBack }: WhiteboardProps) {
       acceptedAnswers: step.acceptedAnswers,
       confusions: step.confusions,
       studentAnswer: answer,
-      attempt,
-    }
-    const result = await gradeAnswer(input)
-    const output = applyGrade(engineState, step, result)
-    setEngineState(output.state)
-    setGradeResult(result)
-    setEngineAction(output.action)
-    setAnswer('')
-    setQuestionVisible(true)
+      attempt: (engineState.attempts[step.id] ?? 0) + 1,
+    })
 
-    if (output.action === 'reexplain') {
-      beginStep(stepIndex)
-      setGradeResult(result)
-      setEngineAction('reexplain')
-      setQuestionVisible(true)
-    }
+    const engineResult = applyGrade(engineState, step, result)
+    setEngineState(engineResult.state)
+    setGradeAction(engineResult.action)
+    setFeedbackText(result.feedback)
+    setRevealedAnswer(engineResult.action === 'reveal_and_advance' ? step.expected : null)
+    setQuestionVisible(engineResult.action === 'followup' || engineResult.action === 'rephrase' || engineResult.action === 'reexplain')
+    setAnswer('')
+    setIsSubmitting(false)
   }
 
-  const continueFromEngine = () => {
-    if (!canAdvance) return
-    const nextIndex = engineState.currentStep
-    if (nextIndex >= lesson.steps.length) {
-      cancelPlayback()
-      setCompleted(true)
-      return
+  const goNext = () => {
+    if (gradeAction === 'advance' || gradeAction === 'reveal_and_advance') {
+      const nextState = advanceStep(engineState)
+      setEngineState(nextState)
+      setFeedbackText(null)
+      setRevealedAnswer(null)
+      setGradeAction(null)
+      if (nextState.currentStep >= lesson.steps.length) {
+        clearPlayback()
+        onBack()
+        return
+      }
+      beginStep(nextState.currentStep)
     }
-    beginStep(nextIndex)
   }
 
   const toggleMute = () => {
     const nextMuted = !isMuted
-    cancelPlayback()
+    clearPlayback()
     setIsMuted(nextMuted)
-    setHasStarted(false)
-    setQuestionVisible(false)
-    setSpeechMessage(nextMuted ? 'Muted. Click Play lesson to show the step text.' : 'Unmuted. Click Play lesson to hear this step.')
+    if (nextMuted && hasStarted) {
+      setWritingStarted(true)
+      setRevealedParts(step.highlight)
+    }
   }
 
   const togglePause = () => {
     if (!speechSupported || isMuted || !hasStarted) return
-    if (isPaused) { window.speechSynthesis.resume(); setIsPaused(false) }
-    else { window.speechSynthesis.pause(); setIsPaused(true) }
-  }
-
-  if (completed) {
-    return <main className="whiteboard-page completion-page"><header className="whiteboard-header"><button className="back-button" onClick={goBack}>← Back</button><span className="whiteboard-brand">Chalk<span>AI</span></span><span /></header><section className="completion-card"><h1>Lesson complete</h1><p>You’ve reached the end of this lesson.</p><ConceptPanel states={engineState.states} /><button className="next-button" onClick={goBack}>Return home</button></section></main>
+    if (isPaused) {
+      window.speechSynthesis.resume()
+      setIsPaused(false)
+    } else {
+      window.speechSynthesis.pause()
+      setIsPaused(true)
+    }
   }
 
   return (
     <main className="whiteboard-page">
-      <header className="whiteboard-header"><button className="back-button" onClick={goBack}><span aria-hidden="true">←</span> Back</button><span className="whiteboard-brand">Chalk<span>AI</span></span><span className="step-count">Step {stepIndex + 1} of {lesson.steps.length}</span></header>
+      <header className="whiteboard-header">
+        <button className="back-button" onClick={goBack}><span aria-hidden="true">←</span> Back</button>
+        <span className="whiteboard-brand">Chalk<span>AI</span></span>
+        <span className="step-count">Step {stepIndex + 1} of {lesson.steps.length}</span>
+      </header>
+
       <section className="whiteboard-area" ref={boardRef} aria-label={`${lesson.topic}, step ${stepIndex + 1}`}>
-        <ConceptPanel states={engineState.states} />
         <p className="board-label">{lesson.topic}</p>
         <p className="lesson-say">{step.say}</p>
         <LessonDiagram step={step} revealedParts={revealedParts} />
-        <div className="written-board" aria-live="polite"><p className="written-label">ON THE BOARD</p><p className="lesson-sentence">{visibleText}</p></div>
-        {canAnswer && <form className="answer-form" onSubmit={submitAnswer}>
-          <label htmlFor="lesson-answer">{step.check}</label>
-          <div className="answer-controls"><input id="lesson-answer" value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="Type your answer" autoComplete="off" disabled={canAdvance} /><button type="submit" disabled={!answer.trim() || canAdvance}>Submit</button></div>
-          {gradeResult && <p className={`grade-feedback ${gradeResult.grade}`} role="status">{gradeResult.feedback}{gradeResult.confusedWith ? ` (Related concept: ${gradeResult.confusedWith})` : ''}</p>}
-          {import.meta.env.DEV && gradeResult && <p className="grader-source">Graded by: {gradeResult.source}</p>}
-          {engineAction === 'reveal_and_advance' && <p className="grade-feedback">The expected answer is <strong>{step.expected}</strong>.</p>}
-          {canAdvance && <button type="button" className="continue-button" onClick={continueFromEngine}>Continue to next step →</button>}
-        </form>}
-        {!canAnswer && gradeResult && <p className={`grade-feedback ${gradeResult.grade}`} role="status">{gradeResult.feedback}</p>}
+        <div className="written-board" aria-live="polite">
+          <p className="written-label">ON THE BOARD</p>
+          <p className="lesson-sentence">{visibleText}<span className="typewriter-cursor" aria-hidden="true">{done ? '' : '|'}</span></p>
+        </div>
+
+        {questionVisible && (
+          <form className="answer-form" onSubmit={handleSubmit}>
+            <label htmlFor="step-answer">{step.check}</label>
+            <div className="answer-controls">
+              <input id="step-answer" value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="Type your answer" autoComplete="off" />
+              <button type="submit" disabled={!answer.trim() || isSubmitting}>Submit</button>
+            </div>
+            {feedbackText && <p className="grade-feedback" role="status">{feedbackText}</p>}
+            {revealedAnswer && <p className="grade-feedback" role="status">Expected answer: <strong>{revealedAnswer}</strong></p>}
+          </form>
+        )}
+
+        {!questionVisible && feedbackText && (gradeAction === 'advance' || gradeAction === 'reveal_and_advance') && (
+          <div className="answer-form">
+            <p className="grade-feedback" role="status">{feedbackText}</p>
+            <button type="button" className="continue-button" onClick={goNext}>Continue</button>
+          </div>
+        )}
       </section>
-      <footer className="whiteboard-footer"><p className="lesson-status" aria-live="polite">{speechMessage || (!hasStarted ? 'Click Play lesson to begin this step.' : 'Answer the question when ready.')}</p><div className="lesson-navigation"><button type="button" className="audio-control" onClick={togglePause} disabled={!speechSupported || isMuted || !hasStarted}>{isPaused ? 'Resume' : 'Pause'}</button><button type="button" className="audio-control" onClick={toggleMute}>{isMuted ? 'Unmute' : 'Mute'}</button>{!hasStarted && <button type="button" className="next-button" onClick={() => beginStep(stepIndex)}>Play lesson <span aria-hidden="true">▶</span></button>}</div></footer>
+
+      <footer className="whiteboard-footer">
+        <p className="lesson-status" aria-live="polite">
+          {!hasStarted ? 'Tap play to begin this step.' : speechError ? 'Speech was blocked; lesson text is shown.' : done ? (isLastStep ? 'You’ve reached the last step.' : 'Ready when you are.') : 'Lesson in progress.'}
+          {!speechSupported && hasStarted ? ' Speech is unavailable in this browser.' : ''}
+        </p>
+        <div className="lesson-navigation">
+          <button type="button" className="audio-control" onClick={togglePause} disabled={!speechSupported || isMuted || !hasStarted}>{isPaused ? 'Resume' : 'Pause'}</button>
+          <button type="button" className="audio-control" onClick={toggleMute}>{isMuted ? 'Unmute' : 'Mute'}</button>
+          {!hasStarted ? (
+            <button type="button" className="next-button" onClick={() => beginStep(stepIndex)}>Play lesson <span aria-hidden="true">▶</span></button>
+          ) : (
+            <button className="next-button" disabled={!done && !gradeAction} onClick={goNext}>
+              {isLastStep ? 'Finish' : 'Next'} <span aria-hidden="true">→</span>
+            </button>
+          )}
+        </div>
+      </footer>
     </main>
   )
 }

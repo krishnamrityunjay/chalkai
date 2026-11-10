@@ -37,7 +37,6 @@ export function applyGrade(
 
   if (result.grade === 'correct') {
     next.states[step.concept] = 'understood'
-    next.currentStep = state.currentStep + 1
     return { state: next, action: 'advance' }
   }
 
@@ -46,6 +45,18 @@ export function applyGrade(
   next.states[step.concept] = 'confused'
   if (attempt === 1) return { state: next, action: 'reexplain' }
 
-  next.currentStep = state.currentStep + 1
   return { state: next, action: 'reveal_and_advance' }
 }
+
+export function advanceStep(state: LessonEngineState): LessonEngineState {
+  const nextIndex = state.currentStep + 1
+  return {
+    ...state,
+    currentStep: nextIndex,
+    attempts: {
+      ...state.attempts,
+      [nextIndex]: 0,
+    },
+  }
+}
+
