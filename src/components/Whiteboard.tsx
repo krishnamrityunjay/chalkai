@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import lesson from '../lesson.json'
-import { gradeAnswer, type GradeResult } from '../grading/gradeAnswer'
+import { gradeAnswer, type GradeAnswerWithSource } from '../grading'
 import { applyGrade, conceptChain, createInitialState, type EngineAction, type LessonEngineState } from '../engine/lessonEngine'
 import { useTypewriter } from '../hooks/useTypewriter'
 import './Whiteboard.css'
@@ -62,7 +62,7 @@ function Whiteboard({ onBack }: WhiteboardProps) {
   const [hasStarted, setHasStarted] = useState(false)
   const [questionVisible, setQuestionVisible] = useState(false)
   const [answer, setAnswer] = useState('')
-  const [gradeResult, setGradeResult] = useState<GradeResult | null>(null)
+  const [gradeResult, setGradeResult] = useState<GradeAnswerWithSource | null>(null)
   const [engineAction, setEngineAction] = useState<EngineAction | null>(null)
   const [isMuted, setIsMuted] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
@@ -77,7 +77,6 @@ function Whiteboard({ onBack }: WhiteboardProps) {
   const step = lesson.steps[stepIndex]
   const { visibleText, done } = useTypewriter(step.write, writingStarted, writingRun)
   const canAdvance = engineAction === 'advance' || engineAction === 'reveal_and_advance'
-  // Wait for the board typewriter as well as speech before showing the answer check.
   const canAnswer = questionVisible && done
 
   const cancelPlayback = useCallback(() => {
@@ -110,6 +109,7 @@ function Whiteboard({ onBack }: WhiteboardProps) {
     const target = lesson.steps[targetIndex]
     const sentences = splitSentences(target.say)
     const runId = runIdRef.current
+    setEngineState((current) => ({ ...current, currentStep: targetIndex }))
     setHasStarted(true)
     setEngineAction(null)
     setGradeResult(null)
@@ -128,15 +128,11 @@ function Whiteboard({ onBack }: WhiteboardProps) {
       const revealNext = (index: number) => {
         if (runId !== runIdRef.current || index >= sentences.length) return
         revealSentence(index)
-        if (index + 1 < sentences.length) {
-          timersRef.current.push(window.setTimeout(() => revealNext(index + 1), Math.max(700, sentences[index].length * 42)))
-        } else {
-          setQuestionVisible(true)
-        }
+        if (index + 1 < sentences.length) timersRef.current.push(window.setTimeout(() => revealNext(index + 1), Math.max(700, sentences[index].length * 42)))
+        else setQuestionVisible(true)
       }
-      if (fromIndex < sentences.length) {
-        timersRef.current.push(window.setTimeout(() => revealNext(fromIndex), Math.max(700, sentences[Math.max(0, fromIndex - 1)].length * 42)))
-      } else setQuestionVisible(true)
+      if (fromIndex < sentences.length) timersRef.current.push(window.setTimeout(() => revealNext(fromIndex), Math.max(700, sentences[Math.max(0, fromIndex - 1)].length * 42)))
+      else setQuestionVisible(true)
     }
 
     if (!speechSupported || isMuted) {
@@ -187,19 +183,29 @@ function Whiteboard({ onBack }: WhiteboardProps) {
   const submitAnswer = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!canAnswer || !answer.trim() || canAdvance) return
-    const attempt = (engineState.attempts[step.id] ?? 0) + 1
-    const result = await gradeAnswer({ stepId: step.id, concept: step.concept, question: step.check, expected: step.expected, studentAnswer: answer, attempt })
+    const attempt = Math.min((engineState.attempts[step.id] ?? 0) + 1, 5)
+    const input = {
+      stepId: step.id,
+      concept: step.concept,
+      question: step.check,
+      expected: step.expected,
+      acceptedAnswers: step.acceptedAnswers,
+      confusions: step.confusions,
+      studentAnswer: answer,
+      attempt,
+    }
+    const result = await gradeAnswer(input)
     const output = applyGrade(engineState, step, result)
     setEngineState(output.state)
     setGradeResult(result)
     setEngineAction(output.action)
     setAnswer('')
+    setQuestionVisible(true)
 
     if (output.action === 'reexplain') {
       beginStep(stepIndex)
       setGradeResult(result)
       setEngineAction('reexplain')
-    } else {
       setQuestionVisible(true)
     }
   }
@@ -247,6 +253,7 @@ function Whiteboard({ onBack }: WhiteboardProps) {
           <label htmlFor="lesson-answer">{step.check}</label>
           <div className="answer-controls"><input id="lesson-answer" value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="Type your answer" autoComplete="off" disabled={canAdvance} /><button type="submit" disabled={!answer.trim() || canAdvance}>Submit</button></div>
           {gradeResult && <p className={`grade-feedback ${gradeResult.grade}`} role="status">{gradeResult.feedback}{gradeResult.confusedWith ? ` (Related concept: ${gradeResult.confusedWith})` : ''}</p>}
+          {import.meta.env.DEV && gradeResult && <p className="grader-source">Graded by: {gradeResult.source}</p>}
           {engineAction === 'reveal_and_advance' && <p className="grade-feedback">The expected answer is <strong>{step.expected}</strong>.</p>}
           {canAdvance && <button type="button" className="continue-button" onClick={continueFromEngine}>Continue to next step →</button>}
         </form>}
